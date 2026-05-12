@@ -14,7 +14,7 @@ from src.utils.tokens import estimate_tokens
 def minimal_deriver_prompt(
     peer_id: str,
     messages: str,
-    language: str = "English",
+    language: str = "Chinese",
 ) -> str:
     """
     Generate minimal prompt for fast observation extraction.

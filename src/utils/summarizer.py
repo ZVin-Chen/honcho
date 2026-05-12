@@ -99,7 +99,7 @@ def short_summary_prompt(
     formatted_messages: str,
     output_words: int,
     previous_summary_text: str,
-    language: str = "English",
+    language: str = "Chinese",
 ) -> str:
     """Generate the short summary prompt."""
     return c(f"""
@@ -134,7 +134,7 @@ def long_summary_prompt(
     formatted_messages: str,
     output_words: int,
     previous_summary_text: str,
-    language: str = "English",
+    language: str = "Chinese",
 ) -> str:
     """Generate the long summary prompt."""
     return c(f"""

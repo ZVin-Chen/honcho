@@ -1228,10 +1228,8 @@ class AppSettings(HonchoSettings):
     EMBED_MESSAGES: bool = True
     # Preferred output language for agent-generated content (observations,
     # peer-card entries, summaries). Free-form natural-language name —
-    # pass through to prompts as e.g. "English" / "Chinese" / "Japanese".
-    # Defaults to English to preserve existing behaviour; operators can
-    # override per deployment.
-    LANGUAGE: str = "English"
+    # pass through to prompts as e.g. "Chinese" / "English" / "Japanese".
+    LANGUAGE: str = "Chinese"
     LANGFUSE_HOST: str | None = None
     LANGFUSE_PUBLIC_KEY: str | None = None
 
