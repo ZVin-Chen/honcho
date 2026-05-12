@@ -99,6 +99,7 @@ def short_summary_prompt(
     formatted_messages: str,
     output_words: int,
     previous_summary_text: str,
+    language: str = "Chinese",
 ) -> str:
     """Generate the short summary prompt."""
     return c(f"""
@@ -112,6 +113,8 @@ You are a system that summarizes parts of a conversation to create a concise and
 If there is a previous summary, ALWAYS make your new summary inclusive of both it and the new messages, therefore capturing the ENTIRE conversation. Prioritize key facts across the entire conversation.
 
 Provide a concise, factual summary that captures the essence of the conversation. Your summary should be detailed enough to serve as context for future messages, but brief enough to be helpful. Prefer a thorough chronological narrative over a list of bullet points.
+
+Write the summary in **{language}**, regardless of the source messages' language. Keep proper nouns (people, places, brands, code) in their original form.
 
 Return only the summary without any explanation or meta-commentary.
 
@@ -131,6 +134,7 @@ def long_summary_prompt(
     formatted_messages: str,
     output_words: int,
     previous_summary_text: str,
+    language: str = "Chinese",
 ) -> str:
     """Generate the long summary prompt."""
     return c(f"""
@@ -146,6 +150,8 @@ You are a system that creates thorough, comprehensive summaries of conversations
 If there is a previous summary, ALWAYS make your new summary inclusive of both it and the new messages, therefore capturing the ENTIRE conversation. Prioritize key facts across the entire conversation.
 
 Provide a thorough and detailed summary that captures the essence of the conversation. Your summary should serve as a comprehensive record of the important information in this conversation. Prefer an exhaustive chronological narrative over a list of bullet points.
+
+Write the summary in **{language}**, regardless of the source messages' language. Keep proper nouns (people, places, brands, code) in their original form.
 
 Return only the summary without any explanation or meta-commentary.
 
@@ -212,7 +218,8 @@ async def create_short_summary(
         previous_summary_text = "There is no previous summary -- the messages are the beginning of the conversation."
 
     prompt = short_summary_prompt(
-        formatted_messages, output_words, previous_summary_text
+        formatted_messages, output_words, previous_summary_text,
+        language=settings.LANGUAGE,
     )
 
     return await honcho_llm_call(
@@ -237,7 +244,8 @@ async def create_long_summary(
         previous_summary_text = "There is no previous summary -- the messages are the beginning of the conversation."
 
     prompt = long_summary_prompt(
-        formatted_messages, output_words, previous_summary_text
+        formatted_messages, output_words, previous_summary_text,
+        language=settings.LANGUAGE,
     )
 
     return await honcho_llm_call(

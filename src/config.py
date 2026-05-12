@@ -683,6 +683,13 @@ class EmbeddingSettings(HonchoSettings):
     VECTOR_DIMENSIONS: Annotated[int, Field(default=1536, gt=0)] = 1536
     MAX_INPUT_TOKENS: Annotated[int, Field(default=8192, gt=0)] = 8192
     MAX_TOKENS_PER_REQUEST: Annotated[int, Field(default=300_000, gt=0)] = 300_000
+    # Maximum embeddings per single API request. OpenAI accepts 2048;
+    # many compatible providers cap much lower (e.g. Alibaba Bailian
+    # ``text-embedding-v4`` rejects requests with > 10 inputs). Operators
+    # should set this to their provider's documented batch ceiling so
+    # batch_embed and simple_batch_embed split eagerly instead of relying
+    # on per-item fallback after a 400.
+    MAX_BATCH_SIZE: Annotated[int, Field(default=2048, gt=0)] = 2048
 
     @model_validator(mode="before")
     @classmethod
@@ -1219,6 +1226,10 @@ class AppSettings(HonchoSettings):
 
     MAX_MESSAGE_SIZE: Annotated[int, Field(default=25_000, gt=0)] = 25_000
     EMBED_MESSAGES: bool = True
+    # Preferred output language for agent-generated content (observations,
+    # peer-card entries, summaries). Free-form natural-language name —
+    # pass through to prompts as e.g. "Chinese" / "English" / "Japanese".
+    LANGUAGE: str = "Chinese"
     LANGFUSE_HOST: str | None = None
     LANGFUSE_PUBLIC_KEY: str | None = None
 

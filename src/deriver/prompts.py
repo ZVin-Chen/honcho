@@ -14,6 +14,7 @@ from src.utils.tokens import estimate_tokens
 def minimal_deriver_prompt(
     peer_id: str,
     messages: str,
+    language: str = "Chinese",
 ) -> str:
     """
     Generate minimal prompt for fast observation extraction.
@@ -21,6 +22,9 @@ def minimal_deriver_prompt(
     Args:
         peer_id: The ID of the user being analyzed.
         messages: All messages in the range (interleaving messages and new turns combined).
+        language: Free-form language name passed to the model so that
+            extracted observations are written in the operator's preferred
+            language (default English preserves prior behaviour).
 
     Returns:
         Formatted prompt string for observation extraction.
@@ -33,6 +37,10 @@ Analyze messages from {peer_id} to extract **explicit atomic facts** about them.
    - Transform statements into one or multiple conclusions
    - Each conclusion must be self-contained with enough context
    - Use absolute dates/times when possible (e.g. "June 26, 2025" not "yesterday")
+
+LANGUAGE: Write every observation content string in **{language}**, even if the
+source messages are in a different language. Keep proper nouns (people, places,
+brands, code) in their original form.
 
 RULES:
 - Properly attribute observations to the correct subject: if it is about {peer_id}, say so. If {peer_id} is referencing someone or something else, make that clear.

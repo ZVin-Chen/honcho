@@ -112,7 +112,11 @@ async def process_representation_tasks_batch(
     )
 
     # Build prompt
-    prompt = minimal_deriver_prompt(peer_id=observed, messages=formatted_messages)
+    prompt = minimal_deriver_prompt(
+        peer_id=observed,
+        messages=formatted_messages,
+        language=settings.LANGUAGE,
+    )
 
     context_prep_duration = (time.perf_counter() - overall_start) * 1000
     accumulate_metric(
