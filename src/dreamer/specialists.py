@@ -188,10 +188,17 @@ If you update it, send the full deduplicated list and remove stale entries.
             observed, peer_card_enabled=peer_card_enabled
         )
         system_prompt += (
-            f"\n\n## OUTPUT LANGUAGE\n\nWrite every observation `content` and any"
-            f" peer-card entry you create or update in **{settings.LANGUAGE}**,"
-            f" regardless of the source messages' language. Keep proper nouns"
-            f" (people, places, brands, code) in their original form."
+            f"\n\n## OUTPUT LANGUAGE\n\n"
+            f"Write every observation `content` and **every** peer-card entry"
+            f" in **{settings.LANGUAGE}**, regardless of the source messages'"
+            f" language. Keep proper nouns (people, places, brands, code) in"
+            f" their original form.\n\n"
+            f"This applies to `update_peer_card` calls too — when you preserve"
+            f" or carry over an entry that already exists in another language,"
+            f" **translate it into {settings.LANGUAGE}** before including it in"
+            f" the new list. The peer card must be linguistically uniform"
+            f" after every update. Do NOT silently copy English entries verbatim"
+            f" if the target language is not English."
         )
         messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
