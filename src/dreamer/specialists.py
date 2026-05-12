@@ -179,14 +179,22 @@ If you update it, send the full deduplicated list and remove stale entries.
                 )
         # DB session closed — LLM calls happen without holding a connection
 
-        # Build messages
+        # Build messages — append a language directive so observations,
+        # peer-card entries, and any agent-authored content come back in
+        # the operator-configured language (settings.LANGUAGE, free-form
+        # natural-language name; defaults to English so prior behaviour
+        # is preserved).
+        system_prompt = self.build_system_prompt(
+            observed, peer_card_enabled=peer_card_enabled
+        )
+        system_prompt += (
+            f"\n\n## OUTPUT LANGUAGE\n\nWrite every observation `content` and any"
+            f" peer-card entry you create or update in **{settings.LANGUAGE}**,"
+            f" regardless of the source messages' language. Keep proper nouns"
+            f" (people, places, brands, code) in their original form."
+        )
         messages: list[dict[str, str]] = [
-            {
-                "role": "system",
-                "content": self.build_system_prompt(
-                    observed, peer_card_enabled=peer_card_enabled
-                ),
-            },
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
                 "content": self.build_user_prompt(hints, current_peer_card),
