@@ -2,7 +2,9 @@
 # https://testdriven.io/blog/docker-best-practices/
 FROM python:3.13-slim-bookworm
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.24 /uv /bin/uv
+# 用 pip 安装 uv，而不是 COPY --from=ghcr.io/astral-sh/uv:0.9.24。
+# 受限网络（企业 mirror / 墙后 CI）拉 ghcr.io 容易 403，pip 走 PyPI 更稳。
+RUN pip install --no-cache-dir "uv==0.9.24"
 
 # Set Working directory
 WORKDIR /app
