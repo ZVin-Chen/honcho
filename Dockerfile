@@ -1,5 +1,18 @@
 # https://pythonspeed.com/articles/base-image-python-docker-images/
 # https://testdriven.io/blog/docker-best-practices/
+
+# ---------- admin-ui build stage ----------
+# Builds the Vite/React SPA that the FastAPI app mounts at /admin/ui/.
+# Kept in a separate stage so changes to admin-ui/ don't bust the python
+# dependency cache and so node tooling isn't shipped in the runtime image.
+FROM node:20-slim AS admin-ui-build
+WORKDIR /admin-ui
+COPY admin-ui/package.json admin-ui/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+COPY admin-ui/ ./
+RUN npm run build
+
+# ---------- runtime stage ----------
 FROM python:3.13-slim-bookworm
 
 # 用 pip 安装 uv，而不是 COPY --from=ghcr.io/astral-sh/uv:0.9.24。
@@ -47,6 +60,11 @@ COPY --chown=app:app docker/ /app/docker/
 COPY --chown=app:app alembic.ini /app/alembic.ini
 # Copy config files - this will copy config.toml if it exists, and config.toml.example
 COPY --chown=app:app config.toml* /app/
+
+# Admin observability SPA — built in the admin-ui-build stage and copied
+# in as static assets. AdminSettings.UI_DIST_PATH defaults to admin-ui/dist
+# (resolved relative to WORKDIR=/app), so this path must match.
+COPY --chown=app:app --from=admin-ui-build /admin-ui/dist /app/admin-ui/dist
 
 # Switch to non-root user
 USER app

@@ -1210,6 +1210,24 @@ class VectorStoreSettings(HonchoSettings):
         return self
 
 
+class AdminSettings(HonchoSettings):
+    """Settings for the /admin observability surface.
+
+    UI_ENABLED controls whether the /admin/ui static SPA is mounted; the
+    JSON endpoints under /admin are always available when the router is
+    included. There is no auth — gate at the network boundary.
+    """
+
+    model_config = SettingsConfigDict(env_prefix="ADMIN_", extra="ignore")  # pyright: ignore
+
+    UI_ENABLED: bool = True
+    # Path to the built SPA. Relative to the working directory the API
+    # process is started from. The Dockerfile builds the SPA into
+    # /app/admin-ui/dist, which is what this default resolves to at
+    # runtime; override for development workflows that run vite separately.
+    UI_DIST_PATH: str = "admin-ui/dist"
+
+
 class AppSettings(HonchoSettings):
     # No env_prefix for app-level settings
     model_config = SettingsConfigDict(  # pyright: ignore
@@ -1255,6 +1273,7 @@ class AppSettings(HonchoSettings):
     CACHE: CacheSettings = Field(default_factory=CacheSettings)
     DREAM: DreamSettings = Field(default_factory=DreamSettings)
     VECTOR_STORE: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
+    ADMIN: AdminSettings = Field(default_factory=AdminSettings)
 
     @field_validator("LOG_LEVEL")
     def validate_log_level(cls, v: str) -> str:
