@@ -14,12 +14,20 @@ sessions, used by the SPA shell to populate dropdowns. Later PRs add:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Path, Query
-from sqlalchemy import func, select
+import logging
 
-from src import models
-from src.dependencies import db
+from fastapi import APIRouter, Body, HTTPException, Path, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src import crud, models, schemas
+from src.config import ReasoningLevel
+from src.dependencies import db, tracked_db
+from src.dialectic.core import DialecticAgent
+from src.utils.config_helpers import get_configuration
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -169,3 +177,100 @@ async def list_sessions(
             for s in sessions
         ],
     }
+
+
+# --- Dialectic trace --------------------------------------------------------
+
+
+class DialecticTraceRequest(BaseModel):
+    observer: str = Field(..., description="peer making the query")
+    target: str = Field(..., description="peer being queried about")
+    query: str = Field(..., min_length=1)
+    session: str | None = Field(
+        None,
+        description=(
+            "Pin retrieval to a single session. Omit for cross-session "
+            "(global) recall — the typical case."
+        ),
+    )
+    reasoning_level: ReasoningLevel = "low"
+
+
+@router.post("/workspaces/{workspace_name}/dialectic/trace")
+async def dialectic_trace(
+    workspace_name: str = Path(...),
+    body: DialecticTraceRequest = Body(...),
+):
+    """Run a dialectic query and return the structured trace.
+
+    Mirrors src.dialectic.chat.agentic_chat's preflight (peer existence
+    check + peer-card fetch), then calls DialecticAgent.answer_with_trace
+    instead of .answer so the prefetched observations, tool calls, and
+    token counts come back to the caller.
+
+    Errors are surfaced as HTTPException; everything else propagates to
+    the global handler in main.py.
+    """
+    # Preflight: validate peers + session exist, gather peer cards.
+    # Same shape as agentic_chat — kept verbatim so the trace path stays
+    # behaviourally identical to production recall.
+    async with tracked_db("admin.dialectic_trace.preflight") as session:
+        try:
+            await crud.get_peer(
+                session, workspace_name, schemas.PeerCreate(name=body.observer)
+            )
+            if body.observer != body.target:
+                await crud.get_peer(
+                    session, workspace_name, schemas.PeerCreate(name=body.target)
+                )
+        except Exception as e:
+            raise HTTPException(status_code=404, detail=f"peer not found: {e}") from e
+
+        session_row = None
+        if body.session:
+            try:
+                session_row = await crud.get_session(
+                    session,
+                    workspace_name=workspace_name,
+                    session_name=body.session,
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=404, detail=f"session not found: {e}"
+                ) from e
+
+        try:
+            workspace = await crud.get_workspace(
+                session, workspace_name=workspace_name
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=404, detail=f"workspace not found: {e}"
+            ) from e
+
+        configuration = get_configuration(None, session_row, workspace)
+
+        observer_peer_card = None
+        target_peer_card = None
+        if configuration.peer_card.use:
+            observer_peer_card = await crud.get_peer_card(
+                session, workspace_name, observer=body.observer, observed=body.observer
+            )
+            if body.observer != body.target:
+                target_peer_card = await crud.get_peer_card(
+                    session,
+                    workspace_name,
+                    observer=body.observer,
+                    observed=body.target,
+                )
+
+    agent = DialecticAgent(
+        workspace_name=workspace_name,
+        session_name=body.session,
+        observer=body.observer,
+        observed=body.target,
+        observer_peer_card=observer_peer_card,
+        observed_peer_card=target_peer_card,
+        reasoning_level=body.reasoning_level,
+    )
+    return await agent.answer_with_trace(body.query)

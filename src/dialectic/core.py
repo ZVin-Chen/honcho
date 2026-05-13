@@ -99,6 +99,11 @@ class DialecticAgent:
         ]
         self._session_history_initialized: bool = False
         self._prefetched_conclusion_count: int = 0
+        # Raw Representation objects from the prefetch step. Populated by
+        # _prefetch_relevant_observations so answer_with_trace can return
+        # structured prefetch data without re-running the searches.
+        self._prefetch_explicit_repr: Any | None = None
+        self._prefetch_derived_repr: Any | None = None
         self._run_id: str = str(uuid.uuid4())[
             :8
         ]  # Always generate for event correlation
@@ -196,6 +201,12 @@ class DialecticAgent:
                 levels=["deductive", "inductive", "contradiction"],
                 embedding=query_embedding,
             )
+
+            # Save raw representations for trace consumers (answer_with_trace).
+            # Done before the empty-check so the trace can show "prefetched
+            # nothing" rather than None.
+            self._prefetch_explicit_repr = explicit_repr
+            self._prefetch_derived_repr = derived_repr
 
             if explicit_repr.is_empty() and derived_repr.is_empty():
                 return None
@@ -511,3 +522,113 @@ class DialecticAgent:
             thinking_content=response.thinking_content,
             iterations=response.iterations,
         )
+
+    async def answer_with_trace(self, query: str) -> dict[str, Any]:
+        """
+        Same flow as `answer`, but returns a structured trace alongside the
+        final answer instead of only the answer string.
+
+        Intended for the /admin observability surface — production callers
+        should stick to `answer` / `answer_stream`. The shape:
+
+            {
+              "answer": str,
+              "elapsed_ms": float,
+              "run_id": str,
+              "reasoning_level": str,
+              "iterations": int,
+              "prefetch": {
+                "explicit": [obs.model_dump(), ...],
+                "deductive": [...],
+                "inductive": [...],
+                "contradiction": [...],
+              },
+              "tool_calls": [
+                {"tool_name": str, "tool_input": dict, "tool_result": Any},
+                ...
+              ],
+              "thinking": str | None,
+              "tokens": {input, output, cache_read, cache_creation},
+            }
+
+        The prefetch buckets aggregate both the "explicit" and "derived"
+        searches the agent runs before calling the LLM; tool_calls come
+        straight from honcho_llm_call's tool-loop accumulator.
+        """
+        tool_executor, task_name, run_id, start_time = await self._prepare_query(query)
+
+        level_settings = settings.DIALECTIC.LEVELS[self.reasoning_level]
+        tools = (
+            DIALECTIC_TOOLS_MINIMAL
+            if self.reasoning_level == "minimal"
+            else DIALECTIC_TOOLS
+        )
+        max_tokens = (
+            level_settings.MAX_OUTPUT_TOKENS
+            if level_settings.MAX_OUTPUT_TOKENS is not None
+            else settings.DIALECTIC.MAX_OUTPUT_TOKENS
+        )
+
+        response: HonchoLLMCallResponse[str] = await honcho_llm_call(
+            model_config=_get_dialectic_level_model_config(self.reasoning_level),
+            prompt="",
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=level_settings.TOOL_CHOICE,
+            tool_executor=tool_executor,
+            max_tool_iterations=level_settings.MAX_TOOL_ITERATIONS,
+            messages=self.messages,
+            track_name="Dialectic Agent (trace)",
+            max_input_tokens=settings.DIALECTIC.MAX_INPUT_TOKENS,
+            trace_name="dialectic_chat_trace",
+        )
+
+        self._log_response_metrics(
+            task_name=task_name,
+            run_id=run_id,
+            start_time=start_time,
+            response_content=response.content,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            cache_read_input_tokens=response.cache_read_input_tokens,
+            cache_creation_input_tokens=response.cache_creation_input_tokens,
+            tool_calls_count=len(response.tool_calls_made),
+            thinking_content=response.thinking_content,
+            iterations=response.iterations,
+        )
+
+        # Merge the two prefetch Representations (explicit-only search +
+        # derived-only search) into a single bucket-keyed dict. They were
+        # split for retrieval-dilution reasons in _prefetch_relevant_observations;
+        # for trace consumers that distinction is noise.
+        prefetch: dict[str, list[dict[str, Any]]] = {
+            "explicit": [],
+            "deductive": [],
+            "inductive": [],
+            "contradiction": [],
+        }
+        for repr_obj in (self._prefetch_explicit_repr, self._prefetch_derived_repr):
+            if repr_obj is None:
+                continue
+            for bucket in prefetch:
+                for obs in getattr(repr_obj, bucket, []):
+                    prefetch[bucket].append(obs.model_dump(mode="json"))
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        return {
+            "answer": response.content,
+            "elapsed_ms": elapsed_ms,
+            "run_id": self._run_id,
+            "reasoning_level": self.reasoning_level,
+            "iterations": response.iterations,
+            "prefetch": prefetch,
+            "tool_calls": response.tool_calls_made,
+            "thinking": response.thinking_content,
+            "tokens": {
+                "input": response.input_tokens,
+                "output": response.output_tokens,
+                "cache_read": response.cache_read_input_tokens or 0,
+                "cache_creation": response.cache_creation_input_tokens or 0,
+            },
+        }
