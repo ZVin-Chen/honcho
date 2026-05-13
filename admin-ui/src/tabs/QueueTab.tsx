@@ -5,6 +5,7 @@ import {
   type QueueItemState,
   type QueueSummary,
 } from "../api";
+import { formatLocalTime } from "../utils/format";
 
 interface Props {
   workspace: string;
@@ -241,9 +242,7 @@ function QueueRow({ item }: { item: QueueItem }) {
         </td>
         <td>{item.parsed?.session_name ?? item.session_id ?? "—"}</td>
         <td>{item.message_id ?? "—"}</td>
-        <td className="ts">
-          {item.created_at.replace("T", " ").slice(0, 19)}
-        </td>
+        <td className="ts">{formatLocalTime(item.created_at)}</td>
       </tr>
       {item.error && (
         <tr className="row-error-detail">

@@ -5,6 +5,7 @@ import type {
   ExplicitObs,
   InductiveObs,
 } from "../api";
+import { formatLocalTime } from "../utils/format";
 
 export interface ObservationBuckets {
   explicit: ExplicitObs[];
@@ -85,9 +86,7 @@ function ObsRow({
   return (
     <div className="obs-row">
       <div className="obs-meta">
-        <span className="obs-time">
-          {obs.created_at.replace("T", " ").slice(0, 19)}
-        </span>
+        <span className="obs-time">{formatLocalTime(obs.created_at)}</span>
         {obs.session_name && (
           <span className="obs-session">{obs.session_name}</span>
         )}
