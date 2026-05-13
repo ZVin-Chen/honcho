@@ -103,6 +103,43 @@ export interface PeerCard {
   bullets: string[];
 }
 
+export interface QueueSummary {
+  workspace: string;
+  by_task_type: Record<
+    string,
+    { pending: number; processed: number; errored: number }
+  >;
+  active_work_units: string[];
+}
+
+export interface QueueItem {
+  id: number;
+  task_type: string;
+  work_unit_key: string;
+  parsed: {
+    task_type: string;
+    workspace_name?: string | null;
+    session_name?: string | null;
+    observer?: string | null;
+    observed?: string | null;
+    dream_type?: string | null;
+  } | null;
+  session_id: string | null;
+  message_id: number | null;
+  processed: boolean;
+  error: string | null;
+  created_at: string;
+  payload_summary: Record<string, unknown>;
+}
+
+export interface QueueItemsResponse {
+  workspace: string;
+  total: number;
+  items: QueueItem[];
+}
+
+export type QueueItemState = "pending" | "processed" | "errored";
+
 export interface ObservationsResponse {
   observer: string;
   observed: string;
@@ -156,6 +193,30 @@ export const api = {
     if (opts.limit) q.set("limit", String(opts.limit));
     return request<ObservationsResponse>(
       `/admin/workspaces/${encodeURIComponent(workspace)}/peers/${encodeURIComponent(observer)}/observations?${q}`,
+    );
+  },
+  queueSummary: (workspace: string) =>
+    request<QueueSummary>(
+      `/admin/workspaces/${encodeURIComponent(workspace)}/queue/summary`,
+    ),
+  queueItems: (
+    workspace: string,
+    opts: {
+      task_type?: string;
+      state?: QueueItemState;
+      work_unit_key?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (opts.task_type) q.set("task_type", opts.task_type);
+    if (opts.state) q.set("state", opts.state);
+    if (opts.work_unit_key) q.set("work_unit_key", opts.work_unit_key);
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.offset) q.set("offset", String(opts.offset));
+    return request<QueueItemsResponse>(
+      `/admin/workspaces/${encodeURIComponent(workspace)}/queue/items?${q}`,
     );
   },
   dialecticTrace: async (workspace: string, body: TraceRequest) => {

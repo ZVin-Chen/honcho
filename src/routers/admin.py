@@ -27,6 +27,7 @@ from src.dependencies import db, tracked_db
 from src.dialectic.core import DialecticAgent
 from src.embedding_client import embedding_client
 from src.utils.config_helpers import get_configuration
+from src.utils.work_unit import parse_work_unit_key
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +293,173 @@ async def list_observations(
                 o.model_dump(mode="json") for o in representation.contradiction
             ],
         },
+    }
+
+
+# --- Queue (deriver / summary / dream / reconciler) -------------------------
+
+
+@router.get("/workspaces/{workspace_name}/queue/summary")
+async def queue_summary(
+    workspace_name: str = Path(...),
+    db: AsyncSession = db,
+):
+    """Aggregate queue counts for this workspace.
+
+    Returns a {task_type: {pending, processed, errored}} dict plus the
+    set of in-flight work_unit_keys (anything currently in
+    active_queue_sessions). Manual refresh — no polling.
+    """
+    # Per-task-type counts. Three states we care about:
+    #   pending  = processed=false AND error IS NULL
+    #   processed= processed=true
+    #   errored  = error IS NOT NULL (could be still in queue or already
+    #             marked processed; treated as its own bucket either way)
+    rows = (
+        await db.execute(
+            select(
+                models.QueueItem.task_type,
+                func.count().filter(
+                    (models.QueueItem.processed.is_(False))
+                    & (models.QueueItem.error.is_(None))
+                ).label("pending"),
+                func.count().filter(models.QueueItem.processed.is_(True)).label("processed"),
+                func.count().filter(models.QueueItem.error.isnot(None)).label("errored"),
+            )
+            .where(models.QueueItem.workspace_name == workspace_name)
+            .group_by(models.QueueItem.task_type)
+        )
+    ).all()
+
+    by_task_type = {
+        r.task_type: {
+            "pending": r.pending,
+            "processed": r.processed,
+            "errored": r.errored,
+        }
+        for r in rows
+    }
+
+    # Active work units (deriver is currently claiming them). Joined to
+    # QueueItem to scope by workspace; otherwise active_queue_sessions
+    # has no workspace_name column.
+    active_rows = (
+        await db.execute(
+            select(models.ActiveQueueSession.work_unit_key)
+            .join(
+                models.QueueItem,
+                models.QueueItem.work_unit_key == models.ActiveQueueSession.work_unit_key,
+            )
+            .where(models.QueueItem.workspace_name == workspace_name)
+            .distinct()
+        )
+    ).all()
+
+    return {
+        "workspace": workspace_name,
+        "by_task_type": by_task_type,
+        "active_work_units": [r.work_unit_key for r in active_rows],
+    }
+
+
+@router.get("/workspaces/{workspace_name}/queue/items")
+async def queue_items(
+    workspace_name: str = Path(...),
+    task_type: str | None = Query(None),
+    state: str | None = Query(
+        None,
+        description="pending | processed | errored — filters the items list",
+        pattern="^(pending|processed|errored)$",
+    ),
+    work_unit_key: str | None = Query(
+        None,
+        description=(
+            "Exact-match filter on work_unit_key — useful for chasing a "
+            "specific representation/dream that you've seen in summary."
+        ),
+    ),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = db,
+):
+    """Raw queue items, newest first, with filter knobs.
+
+    payload_summary trims the JSONB payload down to the keys we know are
+    safe to show (message_id, content head, observer/observed/session,
+    dream_type). The full payload is opaque per-task-type and can be
+    huge — operators rarely need everything.
+    """
+    stmt = select(models.QueueItem).where(
+        models.QueueItem.workspace_name == workspace_name
+    )
+    if task_type:
+        stmt = stmt.where(models.QueueItem.task_type == task_type)
+    if state == "pending":
+        stmt = stmt.where(
+            models.QueueItem.processed.is_(False),
+            models.QueueItem.error.is_(None),
+        )
+    elif state == "processed":
+        stmt = stmt.where(models.QueueItem.processed.is_(True))
+    elif state == "errored":
+        stmt = stmt.where(models.QueueItem.error.isnot(None))
+    if work_unit_key:
+        stmt = stmt.where(models.QueueItem.work_unit_key == work_unit_key)
+
+    total = (
+        await db.execute(select(func.count()).select_from(stmt.subquery()))
+    ).scalar_one()
+
+    stmt = stmt.order_by(models.QueueItem.id.desc()).offset(offset).limit(limit)
+    items = (await db.execute(stmt)).scalars().all()
+
+    def _summarize(payload: dict) -> dict:
+        # Trim payload to the few keys that are universally useful for
+        # debugging across task types. The remaining keys (raw vectors,
+        # internal flags, etc.) are noise in this view.
+        keep = (
+            "observer",
+            "observed",
+            "session_name",
+            "message_id",
+            "dream_type",
+            "reconciler_type",
+            "deletion_type",
+            "resource_id",
+        )
+        out = {k: payload[k] for k in keep if k in payload}
+        # If there's a "content" key (deriver representation tasks carry
+        # the source message), include just the first 120 chars.
+        if isinstance(payload.get("content"), str):
+            out["content_head"] = payload["content"][:120]
+        return out
+
+    def _parse_key(key: str) -> dict | None:
+        # Don't blow up if the format ever shifts — work_unit_key is
+        # producer-side data we don't strictly control.
+        try:
+            return parse_work_unit_key(key).model_dump(exclude_none=True)
+        except Exception:
+            return None
+
+    return {
+        "workspace": workspace_name,
+        "total": total,
+        "items": [
+            {
+                "id": i.id,
+                "task_type": i.task_type,
+                "work_unit_key": i.work_unit_key,
+                "parsed": _parse_key(i.work_unit_key),
+                "session_id": i.session_id,
+                "message_id": i.message_id,
+                "processed": i.processed,
+                "error": i.error,
+                "created_at": i.created_at.isoformat(),
+                "payload_summary": _summarize(i.payload or {}),
+            }
+            for i in items
+        ],
     }
 
 
