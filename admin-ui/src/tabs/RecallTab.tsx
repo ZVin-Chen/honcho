@@ -1,16 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
-  type ContradictionObs,
-  type DeductiveObs,
-  type ExplicitObs,
-  type InductiveObs,
   type Peer,
   type ReasoningLevel,
   type Session,
   type ToolCall,
   type TraceResponse,
 } from "../api";
+import { ObservationList } from "../components/ObservationList";
 
 const LEVELS: ReasoningLevel[] = ["minimal", "low", "medium", "high", "max"];
 
@@ -172,7 +169,7 @@ export function RecallTab({ workspace }: Props) {
               {result.prefetch.contradiction.length} contradiction
             </span>
           </h3>
-          <PrefetchPane data={result.prefetch} />
+          <ObservationList data={result.prefetch} />
 
           <h3 className="trace-section-title">
             Tool calls <span className="muted">— in execution order</span>
@@ -195,93 +192,6 @@ export function RecallTab({ workspace }: Props) {
         </div>
       )}
     </section>
-  );
-}
-
-function PrefetchPane({ data }: { data: TraceResponse["prefetch"] }) {
-  const sections: { label: string; items: ReactNode[] }[] = [
-    {
-      label: "explicit",
-      items: data.explicit.map((o) => (
-        <ObsRow key={o.id} obs={o} primary={(o as ExplicitObs).content} />
-      )),
-    },
-    {
-      label: "deductive",
-      items: data.deductive.map((o) => (
-        <ObsRow
-          key={o.id}
-          obs={o}
-          primary={(o as DeductiveObs).conclusion}
-          secondary={(o as DeductiveObs).premises.join(" · ")}
-        />
-      )),
-    },
-    {
-      label: "inductive",
-      items: data.inductive.map((o) => (
-        <ObsRow
-          key={o.id}
-          obs={o}
-          primary={(o as InductiveObs).conclusion}
-          secondary={`${(o as InductiveObs).pattern_type} · ${
-            (o as InductiveObs).confidence
-          }`}
-        />
-      )),
-    },
-    {
-      label: "contradiction",
-      items: data.contradiction.map((o) => (
-        <ObsRow
-          key={o.id}
-          obs={o}
-          primary={(o as ContradictionObs).content}
-          secondary={(o as ContradictionObs).sources.join(" / ")}
-        />
-      )),
-    },
-  ];
-  const present = sections.filter((s) => s.items.length > 0);
-  if (present.length === 0) {
-    return <p className="muted">Nothing prefetched.</p>;
-  }
-  return (
-    <div className="prefetch">
-      {present.map((s) => (
-        <details key={s.label} open>
-          <summary>
-            {s.label} <span className="muted">({s.items.length})</span>
-          </summary>
-          <div className="obs-list">{s.items}</div>
-        </details>
-      ))}
-    </div>
-  );
-}
-
-function ObsRow({
-  obs,
-  primary,
-  secondary,
-}: {
-  obs: { id: string; created_at: string; session_name: string | null };
-  primary: string;
-  secondary?: string;
-}) {
-  return (
-    <div className="obs-row">
-      <div className="obs-meta">
-        <span className="obs-time">
-          {obs.created_at.replace("T", " ").slice(0, 19)}
-        </span>
-        {obs.session_name && (
-          <span className="obs-session">{obs.session_name}</span>
-        )}
-      </div>
-      <div className="obs-content">{primary}</div>
-      {secondary && <div className="obs-secondary muted">{secondary}</div>}
-    </div>
   );
 }
 

@@ -97,6 +97,25 @@ export interface TraceRequest {
   reasoning_level: ReasoningLevel;
 }
 
+export interface PeerCard {
+  observer: string;
+  observed: string;
+  bullets: string[];
+}
+
+export interface ObservationsResponse {
+  observer: string;
+  observed: string;
+  session: string | null;
+  query: string | null;
+  observations: {
+    explicit: ExplicitObs[];
+    deductive: DeductiveObs[];
+    inductive: InductiveObs[];
+    contradiction: ContradictionObs[];
+  };
+}
+
 export const api = {
   listWorkspaces: () => request<{ items: Workspace[] }>("/admin/workspaces"),
   listPeers: (workspace: string, search?: string) => {
@@ -111,6 +130,32 @@ export const api = {
     if (peer) q.set("peer", peer);
     return request<{ total: number; items: Session[] }>(
       `/admin/workspaces/${encodeURIComponent(workspace)}/sessions?${q}`,
+    );
+  },
+  getPeerCard: (workspace: string, observer: string, target?: string) => {
+    const q = new URLSearchParams();
+    if (target) q.set("target", target);
+    return request<PeerCard>(
+      `/admin/workspaces/${encodeURIComponent(workspace)}/peers/${encodeURIComponent(observer)}/card?${q}`,
+    );
+  },
+  listObservations: (
+    workspace: string,
+    observer: string,
+    opts: {
+      target?: string;
+      session?: string;
+      query?: string;
+      limit?: number;
+    } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (opts.target) q.set("target", opts.target);
+    if (opts.session) q.set("session", opts.session);
+    if (opts.query) q.set("query", opts.query);
+    if (opts.limit) q.set("limit", String(opts.limit));
+    return request<ObservationsResponse>(
+      `/admin/workspaces/${encodeURIComponent(workspace)}/peers/${encodeURIComponent(observer)}/observations?${q}`,
     );
   },
   dialecticTrace: async (workspace: string, body: TraceRequest) => {
