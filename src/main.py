@@ -20,6 +20,7 @@ from src.config import settings
 from src.db import engine, request_context
 from src.exceptions import HonchoException
 from src.routers import (
+    admin,
     conclusions,
     keys,
     messages,
@@ -184,6 +185,7 @@ app.add_middleware(
 
 add_pagination(app)
 
+app.include_router(admin.router)
 app.include_router(workspaces.router, prefix="/v3")
 app.include_router(peers.router, prefix="/v3")
 app.include_router(sessions.router, prefix="/v3")
@@ -194,6 +196,37 @@ app.include_router(webhooks.router, prefix="/v3")
 
 # Prometheus metrics endpoint
 app.add_route("/metrics", metrics_endpoint, methods=["GET"])
+
+# Admin observability SPA. Mounted only if (a) the feature is enabled and
+# (b) the build artifacts actually exist on disk — that way running honcho
+# without having built admin-ui (e.g. local dev with `fastapi run` from a
+# fresh checkout) doesn't 500 on import. The JSON endpoints under /admin
+# stay available either way.
+if settings.ADMIN.UI_ENABLED:
+    import os
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    _admin_dist = settings.ADMIN.UI_DIST_PATH
+    if os.path.isdir(_admin_dist):
+        app.mount(
+            "/admin/ui/assets",
+            StaticFiles(directory=os.path.join(_admin_dist, "assets")),
+            name="admin-ui-assets",
+        )
+
+        @app.get("/admin/ui", include_in_schema=False)
+        @app.get("/admin/ui/", include_in_schema=False)
+        @app.get("/admin/ui/{full_path:path}", include_in_schema=False)
+        async def _admin_ui_index(full_path: str = ""):  # noqa: D401, ARG001
+            """Serve the SPA's index.html for any /admin/ui/* path so the
+            client-side router can take over."""
+            return FileResponse(os.path.join(_admin_dist, "index.html"))
+    else:
+        logger.info(
+            "admin: UI_ENABLED=true but %s missing — JSON endpoints active, SPA not mounted",
+            _admin_dist,
+        )
 
 
 @app.get("/health")
