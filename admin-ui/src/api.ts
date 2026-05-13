@@ -144,7 +144,6 @@ export interface ObservationsResponse {
   observer: string;
   observed: string;
   session: string | null;
-  query: string | null;
   observations: {
     explicit: ExplicitObs[];
     deductive: DeductiveObs[];
@@ -182,14 +181,12 @@ export const api = {
     opts: {
       target?: string;
       session?: string;
-      query?: string;
       limit?: number;
     } = {},
   ) => {
     const q = new URLSearchParams();
     if (opts.target) q.set("target", opts.target);
     if (opts.session) q.set("session", opts.session);
-    if (opts.query) q.set("query", opts.query);
     if (opts.limit) q.set("limit", String(opts.limit));
     return request<ObservationsResponse>(
       `/admin/workspaces/${encodeURIComponent(workspace)}/peers/${encodeURIComponent(observer)}/observations?${q}`,

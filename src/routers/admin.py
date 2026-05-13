@@ -25,7 +25,6 @@ from src import crud, models, schemas
 from src.config import ReasoningLevel
 from src.dependencies import db, tracked_db
 from src.dialectic.core import DialecticAgent
-from src.embedding_client import embedding_client
 from src.utils.config_helpers import get_configuration
 from src.utils.work_unit import parse_work_unit_key
 
@@ -235,14 +234,6 @@ async def list_observations(
             "Omit for the cross-session (working-representation-global) view."
         ),
     ),
-    query: str | None = Query(
-        None,
-        description=(
-            "Semantic search query — when set, results are filtered to the "
-            "top-k vector-search matches and an opaque relevance score is "
-            "included in each entry."
-        ),
-    ),
     limit: int = Query(50, ge=1, le=500),
     db: AsyncSession = db,
 ):
@@ -253,16 +244,12 @@ async def list_observations(
     handle both.
 
     Internally delegates to crud.get_working_representation, the same
-    function the dialectic agent uses for its retrieval step.
+    function the dialectic agent uses for its retrieval step. Operators
+    who want a *semantic* lookup (rather than the recency view this
+    endpoint provides) should use Recall instead — it goes through the
+    real dialectic prefetch and produces a faithful answer.
     """
     observed = target if target else observer
-
-    embedding = None
-    if query:
-        try:
-            embedding = await embedding_client.embed(query)
-        except Exception as e:
-            logger.warning("admin.list_observations: embed failed (%s); falling back to recency", e)
 
     try:
         representation = await crud.get_working_representation(
@@ -271,9 +258,6 @@ async def list_observations(
             observer=observer,
             observed=observed,
             session_name=session,
-            include_semantic_query=query,
-            embedding=embedding,
-            semantic_search_top_k=limit if query else None,
             include_most_derived=False,
             max_observations=limit,
         )
@@ -284,7 +268,6 @@ async def list_observations(
         "observer": observer,
         "observed": observed,
         "session": session,
-        "query": query,
         "observations": {
             "explicit": [o.model_dump(mode="json") for o in representation.explicit],
             "deductive": [o.model_dump(mode="json") for o in representation.deductive],

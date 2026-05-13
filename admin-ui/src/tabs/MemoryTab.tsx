@@ -18,14 +18,12 @@ export function MemoryTab({ workspace }: Props) {
   const [observer, setObserver] = useState("");
   const [target, setTarget] = useState("");
   const [session, setSession] = useState("");
-  const [searchInput, setSearchInput] = useState("");
 
   const [observations, setObservations] =
     useState<ObservationsResponse | null>(null);
   const [targetCard, setTargetCard] = useState<PeerCard | null>(null);
   const [selfCard, setSelfCard] = useState<PeerCard | null>(null);
 
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Hydrate peer/session dropdowns whenever workspace changes.
@@ -35,7 +33,6 @@ export function MemoryTab({ workspace }: Props) {
     setObserver("");
     setTarget("");
     setSession("");
-    setSearchInput("");
     setObservations(null);
     setTargetCard(null);
     setSelfCard(null);
@@ -51,14 +48,13 @@ export function MemoryTab({ workspace }: Props) {
       .catch((e) => setError(String(e)));
   }, [workspace]);
 
-  async function load(currentQuery: string | null) {
+  async function load() {
     if (!observer) {
       setObservations(null);
       setTargetCard(null);
       setSelfCard(null);
       return;
     }
-    setLoading(true);
     setError(null);
     try {
       const observedName = target || observer;
@@ -66,7 +62,6 @@ export function MemoryTab({ workspace }: Props) {
         api.listObservations(workspace, observer, {
           target: observedName,
           session: session || undefined,
-          query: currentQuery || undefined,
           limit: 100,
         }),
         api.getPeerCard(workspace, observer, observedName),
@@ -80,16 +75,11 @@ export function MemoryTab({ workspace }: Props) {
       setSelfCard(sCard);
     } catch (e) {
       setError(String(e));
-    } finally {
-      setLoading(false);
     }
   }
 
-  // Auto-fire on observer/target/session change, but NOT on search input —
-  // that's manual via the Apply button so a fresh keystroke doesn't fire a
-  // request.
   useEffect(() => {
-    if (observer) load(null);
+    if (observer) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [observer, target, session, workspace]);
 
@@ -131,37 +121,6 @@ export function MemoryTab({ workspace }: Props) {
             </select>
           </label>
         </div>
-        <div className="form-row form-row--search">
-          <input
-            type="text"
-            placeholder="semantic search (optional) — press Enter or Apply"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") load(searchInput.trim() || null);
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => load(searchInput.trim() || null)}
-            disabled={loading || !observer}
-          >
-            {loading ? "loading…" : "Apply"}
-          </button>
-          {searchInput && (
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => {
-                setSearchInput("");
-                load(null);
-              }}
-              disabled={loading || !observer}
-            >
-              Clear
-            </button>
-          )}
-        </div>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -196,7 +155,6 @@ export function MemoryTab({ workspace }: Props) {
                 {observations.observations.deductive.length} deductive ·{" "}
                 {observations.observations.inductive.length} inductive ·{" "}
                 {observations.observations.contradiction.length} contradiction
-                {observations.query && ` · query="${observations.query}"`}
                 {observations.session && ` · session=${observations.session}`}
               </span>
             </h3>
